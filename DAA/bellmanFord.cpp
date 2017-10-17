@@ -45,13 +45,13 @@ vector<int> bellmanFord(graph<int, int> g, int source, int n){
     vector<int> pi(n);
     
     for(int i = 0; i < n; i++){
-        distance[i] = INT_MAX;
+        distance[i] = 1000000;
         pi[i] = -1;
     }
 
     distance[source] = 0;
 
-    for(int i = 1; i < n; i++){
+    for(int i = 1; i < n - 1; i++){
         for(auto edge : e){
             if(distance[get<1>(edge)] > distance[get<0>(edge)] + get<2>(edge)){
                 distance[get<1>(edge)] = distance[get<0>(edge)] + get<2>(edge);
@@ -97,7 +97,7 @@ int main(){
             g[v].push_back({node, weight});
         }
     }
-
+    
     cout << "Bellman Ford:\n";
     auto get_data = bellmanFord(g, 0, n);
     for(int i : get_data){
