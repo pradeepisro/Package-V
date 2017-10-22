@@ -49,13 +49,13 @@ vector<int> frontier(graph<int, int> g, int source, int n){
 
     distance[source] = 0;
 
-    priority_queue<int> f1, f2;
+    queue<int> f1, f2;
     f1.push(source);
 
     while(!f1.empty()){
         int size = f1.size();
         for(int i = 0; i < size; i++){
-            int u = f1.top();
+            int u = f1.front();
             f1.pop();
             for(auto j : g[u]){
                 int v = get<0>(j), w = get<1>(j);
@@ -73,7 +73,7 @@ vector<int> frontier(graph<int, int> g, int source, int n){
 }
 
 int main(){
-    fstream file("./bellmanFord.txt");
+    fstream file("./input/bellmanFord.txt");
     if(file.fail()){
         cout << "File unable to open\n";
         return 0;
@@ -84,7 +84,7 @@ int main(){
 
     int n = 0;
     file >> n;
-    
+        
     for(int i = 0; i < n; i++){
         int v = 0;
         file >> v;
