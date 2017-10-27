@@ -26,6 +26,7 @@ struct globalParams{
     int *index, *edge, *weight;
     bool *f1, *f2;
     int *iteration, *distance, *pi;
+    bool *toggle;
 };
 
 extern __device__ globalParams gpuParams;

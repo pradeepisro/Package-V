@@ -133,13 +133,16 @@ void computeShortestPath(){
         count = 0;
     }
     __syncthreads();
-    while(iter < 7){
+
+    while(!toggle){
+        toggle = true;
         if(gpuParams.f1[tid]){
             gpuParams.f1[tid] = false;
             count = gpuParams.index[tid + 1] - gpuParams.index[tid];
             printf("tid=%d count=%d\n", tid, count);
             relax<<<1, count>>>(tid, count);
             cudaDeviceSynchronize();
+            toggle = false;
         }
         __syncthreads();
         if(tid == 0){
@@ -170,7 +173,6 @@ void bellmanFord::shortestPath(int source){
         std::cout << cudaGetErrorString(kernel_launch_error) << std::endl;
     }
     std::cout << "Exiting bellmanFord!\n";
-    cudaMemcpy(this->h_distance, gpuParams.distance, this->nNodes * sizeof(int), cudaMemcpyDeviceToHost);
 }
 
 bellmanFord::~bellmanFord(){
