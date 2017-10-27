@@ -1,7 +1,6 @@
 #include "bellmanFord.hpp"
 
-__constant__ globalParams gpuParams;
-
+__device__ globalParams gpuParams;
 
 cudaError_h::cudaError_h(cudaError_t err){
     if(err != cudaSuccess)
@@ -20,12 +19,13 @@ bellmanFord::bellmanFord(std::string filename){
 
     this->h_distance = new int[nNodes];
     this->h_pi = new int[nNodes];
-    this->h_index = new int[nNodes];
+    this->h_index = new int[nNodes + 1];
     this->h_queue_1 = new bool[nNodes];
     this->h_queue_2 = new bool[nNodes];
 
     this->h_edge = new int[nEdges];
     this->h_weight = new int[nEdges];
+    this->h_iteration = new int[nNodes];
 
     int current_node = 0, current_count = 0;
     h_index[0] = 0;
@@ -35,14 +35,15 @@ bellmanFord::bellmanFord(std::string filename){
         this->h_queue_1[i] = false;
         this->h_queue_2[i] = false;
         this->h_pi[i] = -1;
+        this->h_iteration[i] = 0;
         this->h_distance[i] = 100000;
         for(j = 0; j < current_count; j++){
             fin >> h_edge[h_index[current_node] + j];
             fin >> h_weight[h_index[current_node] + j];
         }
-
         this->h_index[current_node + 1] = h_index[current_node] + current_count;
     }
+    this->h_index[nNodes] = this->nEdges - 1;
 }
 
 int bellmanFord::gpuInit(int source){
@@ -84,13 +85,24 @@ int bellmanFord::gpuInit(int source){
     cudaError_h(cudaMalloc((void**)&this->d_queue_2, this->nEdges * sizeof(bool)));
     cudaError_h(cudaMemcpy(this->d_queue_2, this->h_queue_2, this->nNodes * sizeof(bool), cudaMemcpyHostToDevice));
 
-    gpuParams.nNodes = nNodes;
-    gpuParams.nEdges = nEdges;
-    gpuParams.index = d_index;
-    gpuParams.edge = d_edge;
-    gpuParams.weigth = d_weight;
-    gpuParams.f1 = d_queue_1;
-    gpuParams.f2 = d_queue_2;
+    cudaError_h(cudaMalloc((void**)&this->d_iteration, this->nNodes * sizeof(int)));
+    cudaError_h(cudaMemcpy(this->d_iteration, this->h_iteration, this->nNodes * sizeof(int), cudaMemcpyHostToDevice));
+
+
+    globalParams hostParams;
+
+    hostParams.nNodes = this->nNodes;
+    hostParams.nEdges = this->nEdges;
+    hostParams.index = d_index;
+    hostParams.edge = d_edge;
+    hostParams.weight = d_weight;
+    hostParams.f1 = d_queue_1;
+    hostParams.f2 = d_queue_2;
+    hostParams.iteration = d_iteration;
+
+    cudaMemcpyToSymbol(gpuParams, &hostParams, sizeof(globalParams));
+
+    std::cout << "GPU init: Done initializing the device(s)!" << std::endl;
 
     return 0;
 }
@@ -102,28 +114,34 @@ void bellmanFord::displayPrecedence(){
     }
 }
 
-__device__
-void relax(int count){
-    int tid = threadIdx.x + blockDim.x * blockIdx.x;
-    if(tid > count){
-        return;
-    }
-}
-
-__device__
+__global__
 void computeShortestPath(){
+    printf("kernel executing!\n");
     int tid = threadIdx.x + blockDim.x * blockIdx.x;
     if(tid > gpuParams.nNodes){
         return;
     }
 
     __shared__ bool toggle;
-    toggle = false;
+    int count = 0;
+    if(tid == 0)
+        toggle = false;
 
     while(!toggle){
         if(gpuParams.f1[tid]){
-            
+            gpuParams.f1[tid] = false;
+            count = gpuParams.index[tid + 1] - gpuParams.index[tid];
+            relax<<<1, count>>>(tid, count);
+            cudaDeviceSynchronize();
         }
+        __syncthreads();
+        if(tid == 0){
+            bool *temp = gpuParams.f1;
+            gpuParams.f1 = gpuParams.f2;
+            gpuParams.f2 = temp;
+        }
+
+        break;
     }
 
 }
@@ -131,5 +149,32 @@ void computeShortestPath(){
 void bellmanFord::shortestPath(int source){
     h_distance[source] = 0;
     this->gpuInit(source);
-    //computeShortestPath<<<1, nNodes>>>()
+    cudaError_t kernel_launch_error;
+    //computeShortestPath<<<1, nNodes>>>();
+    cudaDeviceSynchronize();
+    kernel_launch_error = cudaGetLastError();
+    if(kernel_launch_error != cudaSuccess){
+        std::cout << cudaGetErrorString(kernel_launch_error) << std::endl;
+    }
+}
+
+bellmanFord::~bellmanFord(){
+    free(h_index);
+    free(h_edge);
+    free(h_iteration);
+    free(h_weight);
+    free(h_distance);
+    free(h_pi);
+    free(h_queue_1);
+    free(h_queue_2);
+
+    cudaFree(d_index);
+    cudaFree(d_edge);
+    cudaFree(d_weight);
+    cudaFree(d_iteration);
+    cudaFree(d_distance);
+    cudaFree(d_pi);
+    cudaFree(d_iteration);
+    cudaFree(d_queue_1);
+    cudaFree(d_queue_2);
 }
