@@ -43,7 +43,7 @@ bellmanFord::bellmanFord(std::string filename){
         }
         this->h_index[current_node + 1] = h_index[current_node] + current_count;
     }
-    this->h_index[nNodes] = this->nEdges - 1;
+    this->h_index[nNodes] = this->nEdges;
 }
 
 int bellmanFord::gpuInit(int source){
@@ -64,8 +64,8 @@ int bellmanFord::gpuInit(int source){
     h_queue_1[source] = true;
     h_distance[source] = 0;
 
-    cudaError_h(cudaMalloc((void**)&this->d_index, this->nNodes * sizeof(int)));
-    cudaError_h(cudaMemcpy(this->d_index, this->h_index, this->nNodes * sizeof(int), cudaMemcpyHostToDevice));
+    cudaError_h(cudaMalloc((void**)&this->d_index, (this->nNodes + 1) * sizeof(int)));
+    cudaError_h(cudaMemcpy(this->d_index, this->h_index, (this->nNodes + 1) * sizeof(int), cudaMemcpyHostToDevice));
 
     cudaError_h(cudaMalloc((void**)&this->d_distance, nNodes * sizeof(int)));
     cudaError_h(cudaMemcpy(this->d_distance, this->h_distance, nNodes * sizeof(int), cudaMemcpyHostToDevice));
@@ -99,6 +99,8 @@ int bellmanFord::gpuInit(int source){
     hostParams.f1 = d_queue_1;
     hostParams.f2 = d_queue_2;
     hostParams.iteration = d_iteration;
+    hostParams.distance = d_distance;
+    hostParams.pi = d_pi;
 
     cudaMemcpyToSymbol(gpuParams, &hostParams, sizeof(globalParams));
 
@@ -110,7 +112,7 @@ int bellmanFord::gpuInit(int source){
 void bellmanFord::displayPrecedence(){
     std::cout << "The precedence of the given graph:\n";
     for(int i = 0; i < this->nNodes; i++){
-        std::cout << i << " " << this->h_pi[i] << "\n";
+        std::cout << i << " " << this->h_pi[i] << " " << h_distance[i] << "\n";
     }
 }
 
@@ -123,14 +125,19 @@ void computeShortestPath(){
     }
 
     __shared__ bool toggle;
+    __shared__ int iter;
     int count = 0;
-    if(tid == 0)
+    if(tid == 0){
         toggle = false;
-
-    while(!toggle){
+        iter = 0;
+        count = 0;
+    }
+    __syncthreads();
+    while(iter < 7){
         if(gpuParams.f1[tid]){
             gpuParams.f1[tid] = false;
             count = gpuParams.index[tid + 1] - gpuParams.index[tid];
+            printf("tid=%d count=%d\n", tid, count);
             relax<<<1, count>>>(tid, count);
             cudaDeviceSynchronize();
         }
@@ -139,9 +146,15 @@ void computeShortestPath(){
             bool *temp = gpuParams.f1;
             gpuParams.f1 = gpuParams.f2;
             gpuParams.f2 = temp;
+            iter++;
         }
+        __syncthreads();
+    }
 
-        break;
+    if(tid == 0){
+        for(int i = 0; i < gpuParams.nNodes; i++){
+            printf("the distance: %d %d\n", i, gpuParams.distance[i]);
+        }
     }
 
 }
@@ -150,12 +163,14 @@ void bellmanFord::shortestPath(int source){
     h_distance[source] = 0;
     this->gpuInit(source);
     cudaError_t kernel_launch_error;
-    //computeShortestPath<<<1, nNodes>>>();
+    computeShortestPath<<<1, nNodes>>>();
     cudaDeviceSynchronize();
     kernel_launch_error = cudaGetLastError();
     if(kernel_launch_error != cudaSuccess){
         std::cout << cudaGetErrorString(kernel_launch_error) << std::endl;
     }
+    std::cout << "Exiting bellmanFord!\n";
+    cudaMemcpy(this->h_distance, gpuParams.distance, this->nNodes * sizeof(int), cudaMemcpyDeviceToHost);
 }
 
 bellmanFord::~bellmanFord(){
