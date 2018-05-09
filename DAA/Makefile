@@ -1,4 +1,4 @@
-CC=clang++-4.0
+CC=clang++
 NVCC=nvcc
 CFLAGS= -Wall -m64 -O3 -std=c++14 -g
 NVCCFLAGS = -std=c++11 -code=compute_35
